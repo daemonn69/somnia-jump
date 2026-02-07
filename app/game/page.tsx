@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useAccount } from 'wagmi'
 import './game.css'
 
 interface Platform {
@@ -11,10 +12,12 @@ interface Platform {
 }
 
 export default function SomniaJumpGame() {
+    const { address } = useAccount()
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start')
     const [score, setScore] = useState(0)
     const [highScore, setHighScore] = useState(0)
+    const [savingToLeaderboard, setSavingToLeaderboard] = useState(false)
 
     // Game refs
     const gameRef = useRef({
@@ -39,6 +42,28 @@ export default function SomniaJumpGame() {
         const saved = localStorage.getItem('somniaJumpHighScore')
         if (saved) setHighScore(parseInt(saved))
     }, [])
+
+    const saveToLeaderboard = useCallback(async (finalScore: number) => {
+        if (!address || finalScore === 0) return
+
+        setSavingToLeaderboard(true)
+        try {
+            const response = await fetch('/api/leaderboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address, score: finalScore })
+            })
+
+            const data = await response.json()
+            if (data.newHighScore) {
+                console.log('New high score saved to leaderboard!')
+            }
+        } catch (error) {
+            console.error('Failed to save to leaderboard:', error)
+        } finally {
+            setSavingToLeaderboard(false)
+        }
+    }, [address])
 
     const generatePlatforms = useCallback((startY: number, count: number): Platform[] => {
         const platforms: Platform[] = []
@@ -159,6 +184,8 @@ export default function SomniaJumpGame() {
                     setHighScore(finalScore)
                     localStorage.setItem('somniaJumpHighScore', finalScore.toString())
                 }
+                // Сохраняем результат в лидерборд
+                saveToLeaderboard(finalScore)
                 setGameState('gameover')
                 return
             }
@@ -228,7 +255,7 @@ export default function SomniaJumpGame() {
         game.animationId = requestAnimationFrame(gameLoop)
 
         return () => cancelAnimationFrame(game.animationId)
-    }, [gameState, highScore])
+    }, [gameState, highScore, saveToLeaderboard])
 
     // Keyboard controls
     useEffect(() => {
@@ -326,6 +353,8 @@ export default function SomniaJumpGame() {
                                 <p className="score-value-large">{score}</p>
                             </div>
                             {score >= highScore && score > 0 && <p className="new-record">🎉 New Record!</p>}
+                            {savingToLeaderboard && <p className="hint">💾 Saving to leaderboard...</p>}
+                            {!address && score > 0 && <p className="hint">🔗 Connect wallet to save to leaderboard</p>}
                             <button className="game-button" onClick={startGame}>Play Again</button>
                             <p className="hint">Press SPACE to restart</p>
                         </div>
