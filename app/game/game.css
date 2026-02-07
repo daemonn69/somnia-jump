@@ -426,6 +426,49 @@
     margin-top: 1rem;
 }
 
+/* Wallet section */
+.wallet-section {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wallet-connected {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.wallet-status {
+    font-weight: 600;
+    color: #22c55e;
+}
+
+.wallet-address {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+}
+
+.wallet-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.wallet-hint {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0;
+}
+
 /* Leaderboard styles */
 .leaderboard {
     margin-top: 1.5rem;

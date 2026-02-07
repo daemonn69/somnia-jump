@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi'
 import { parseEther, toHex } from 'viem'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import './game/game.css'
 
 interface Platform {
@@ -32,6 +32,7 @@ export default function SomniaJumpGame() {
     const { address, isConnected } = useAccount()
     const { data: txHash, sendTransaction, isPending: isSending, error: sendError } = useSendTransaction()
     const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash })
+    const { openConnectModal } = useConnectModal()
 
     // Game refs
     const gameRef = useRef({
@@ -59,6 +60,19 @@ export default function SomniaJumpGame() {
         // Load leaderboard
         fetchLeaderboard()
     }, [])
+
+    // Auto-open connect modal on first visit
+    useEffect(() => {
+        const hasVisited = localStorage.getItem('somniaJumpVisited')
+        if (!hasVisited && !isConnected && openConnectModal) {
+            // Small delay to ensure modal is ready
+            const timer = setTimeout(() => {
+                openConnectModal()
+            }, 500)
+            localStorage.setItem('somniaJumpVisited', 'true')
+            return () => clearTimeout(timer)
+        }
+    }, [isConnected, openConnectModal])
 
     const fetchLeaderboard = async () => {
         try {
@@ -485,6 +499,22 @@ export default function SomniaJumpGame() {
                                 <p>📱 Touch left/right on mobile</p>
                                 <p>⏸ ESC to pause</p>
                             </div>
+
+                            {/* Wallet connection section */}
+                            <div className="wallet-section">
+                                {isConnected ? (
+                                    <div className="wallet-connected">
+                                        <span className="wallet-status">✅ Wallet connected</span>
+                                        <span className="wallet-address">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                                    </div>
+                                ) : (
+                                    <div className="wallet-prompt">
+                                        <p className="wallet-hint">Connect wallet to save your score!</p>
+                                        <ConnectButton />
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="menu-buttons">
                                 <button className="game-button" onClick={startGame}>🚀 Start Game</button>
                                 <button className="game-button secondary" onClick={() => setShowLeaderboard(!showLeaderboard)}>
