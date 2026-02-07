@@ -331,10 +331,12 @@ export default function SomniaJumpGame() {
                 <Link href="/" className="back-button">← Back</Link>
                 <h1 className="game-title">Somnia <span className="gradient-text">Jump</span></h1>
                 <div className="score-display">
-                    <div className="score-item">
-                        <span className="score-label">Score</span>
-                        <span className="score-value">{score}</span>
-                    </div>
+                    {gameState !== 'start' && (
+                        <div className="score-item">
+                            <span className="score-label">Score</span>
+                            <span className="score-value">{score}</span>
+                        </div>
+                    )}
                     <div className="score-item">
                         <span className="score-label">Best</span>
                         <span className="score-value">{highScore}</span>
@@ -353,12 +355,16 @@ export default function SomniaJumpGame() {
                 {gameState === 'start' && (
                     <div className="game-overlay">
                         <div className="overlay-content">
-                            <h2 className="overlay-title">Somnia Jump</h2>
-                            <p className="overlay-description">Jump to the top!</p>
-                            <div className="controls-info">
-                                <p>🎮 ← → or A/D to move</p>
-                                <p>📱 Touch left/right on mobile</p>
-                            </div>
+                            {!showLeaderboard && (
+                                <>
+                                    <h2 className="overlay-title">Somnia Jump</h2>
+                                    <p className="overlay-description">Jump to the top!</p>
+                                    <div className="controls-info">
+                                        <p>🎮 ← → or A/D to move</p>
+                                        <p>📱 Touch left/right on mobile</p>
+                                    </div>
+                                </>
+                            )}
 
                             <div className="menu-buttons">
                                 <button className="game-button" onClick={startGame}>Start Game</button>
