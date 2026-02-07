@@ -330,18 +330,19 @@ export default function SomniaJumpGame() {
             <div className="game-header">
                 <Link href="/" className="back-button">← Back</Link>
                 <h1 className="game-title">Somnia <span className="gradient-text">Jump</span></h1>
-                <div className="score-display">
-                    {gameState !== 'start' && (
+
+                {gameState !== 'start' && (
+                    <div className="score-display">
                         <div className="score-item">
                             <span className="score-label">Score</span>
                             <span className="score-value">{score}</span>
                         </div>
-                    )}
-                    <div className="score-item">
-                        <span className="score-label">Best</span>
-                        <span className="score-value">{highScore}</span>
+                        <div className="score-item">
+                            <span className="score-label">Best</span>
+                            <span className="score-value">{highScore}</span>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
             <div className="canvas-wrapper">
@@ -369,16 +370,14 @@ export default function SomniaJumpGame() {
                             <div className="menu-buttons">
                                 <button className="game-button" onClick={startGame}>Start Game</button>
                                 <button className="game-button secondary" onClick={() => setShowLeaderboard(!showLeaderboard)}>
-                                    🏆 Leaderboard
+                                    {showLeaderboard ? '🏠 Back to Menu' : '🏆 Leaderboard'}
                                 </button>
                             </div>
 
-                            {!isConnected && (
-                                <div className="wallet-prompt" style={{ marginTop: '1rem' }}>
-                                    <p className="wallet-hint">Connect wallet to save scores</p>
-                                    <ConnectButton />
-                                </div>
-                            )}
+                            <div className="wallet-section" style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', zIndex: 50 }}>
+                                {!isConnected && <p className="wallet-hint">Connect wallet to save scores</p>}
+                                <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+                            </div>
 
                             {showLeaderboard && (
                                 <div className="leaderboard">

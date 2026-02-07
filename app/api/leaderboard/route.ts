@@ -97,40 +97,50 @@ export async function GET() {
 
                 if (type === 'kv') {
                     entries = await client.zrange(LEADERBOARD_KEY, 0, 9, { rev: true, withScores: true })
-                    // Vercel KV parsing
-                    if (Array.isArray(entries)) {
-                        for (let i = 0; i < entries.length; i += 2) {
-                            try {
-                                const data = entries[i] as string
-                                const score = Number(entries[i + 1])
-                                const parsed = JSON.parse(data)
-                                leaderboard.push({
-                                    address: parsed.address,
-                                    score: score,
-                                    timestamp: parsed.timestamp
-                                })
-                            } catch { }
-                        }
-                    }
                 } else {
                     // Redis v4
                     entries = await client.zRange(LEADERBOARD_KEY, 0, 9, {
                         REV: true,
                         WITHSCORES: true
                     })
-                    // Redis v4 parsing
-                    if (Array.isArray(entries)) {
+                }
+
+                // Universal parsing logic
+                if (Array.isArray(entries) && entries.length > 0) {
+                    const firstItem = entries[0] as any
+                    // Check if it's an object format (Redis v4 often returns {value, score}, Vercel KV might too)
+                    // We check for 'score' property existence
+                    const isObjectFormat = typeof firstItem === 'object' && firstItem !== null && ('score' in firstItem)
+
+                    if (isObjectFormat) {
                         for (const item of entries) {
                             try {
-                                const dataStr = (item as any).value || item
+                                // Handle both 'member' (Vercel) and 'value' (Redis) keys
+                                const dataStr = (item as any).member || (item as any).value || item
                                 const scoreVal = (item as any).score
+
                                 const parsed = JSON.parse(dataStr)
                                 leaderboard.push({
                                     address: parsed.address,
-                                    score: scoreVal,
+                                    score: Number(scoreVal),
                                     timestamp: parsed.timestamp
                                 })
-                            } catch { }
+                            } catch (e) { /* Skip invalid */ }
+                        }
+                    } else {
+                        // Flat array format: [member, score, member, score...]
+                        for (let i = 0; i < entries.length; i += 2) {
+                            try {
+                                const dataStr = entries[i] as string
+                                const scoreVal = entries[i + 1]
+
+                                const parsed = JSON.parse(dataStr)
+                                leaderboard.push({
+                                    address: parsed.address,
+                                    score: Number(scoreVal),
+                                    timestamp: parsed.timestamp
+                                })
+                            } catch (e) { /* Skip invalid */ }
                         }
                     }
                 }
