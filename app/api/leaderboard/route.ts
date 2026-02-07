@@ -100,10 +100,9 @@ export async function GET() {
                 if (type === 'kv') {
                     entries = await client.zrange(LEADERBOARD_KEY, 0, 9, { rev: true, withScores: true })
                 } else {
-                    // Redis v4
-                    entries = await client.zRange(LEADERBOARD_KEY, 0, 9, {
-                        REV: true,
-                        WITHSCORES: true
+                    // Redis v4/v5 compliant way
+                    entries = await client.zRangeWithScores(LEADERBOARD_KEY, 0, 9, {
+                        REV: true
                     })
                 }
 
@@ -217,7 +216,9 @@ export async function POST(request: NextRequest) {
                 if (type === 'kv') {
                     allEntries = await client.zrange(LEADERBOARD_KEY, 0, -1, { withScores: true })
                 } else {
-                    allEntries = await client.zRange(LEADERBOARD_KEY, 0, -1, { WITHSCORES: true })
+                    // Redis v4/v5 compliant
+                    allEntries = await client.zRangeWithScores(LEADERBOARD_KEY, 0, -1)
+                    // Note: zRangeWithScores already returns objects {value, score}
                 }
 
                 console.log('[Leaderboard POST] All entries count:', allEntries?.length)
