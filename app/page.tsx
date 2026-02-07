@@ -12,12 +12,21 @@ interface Platform {
     width: number
 }
 
+interface LeaderboardEntry {
+    address: string
+    score: number
+    timestamp: number
+}
+
 export default function SomniaJumpGame() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [gameState, setGameState] = useState<'start' | 'playing' | 'paused' | 'gameover'>('start')
     const [score, setScore] = useState(0)
     const [highScore, setHighScore] = useState(0)
     const [savedToChain, setSavedToChain] = useState(false)
+    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+    const [showLeaderboard, setShowLeaderboard] = useState(false)
+    const [savingToLeaderboard, setSavingToLeaderboard] = useState(false)
 
     // Blockchain hooks
     const { address, isConnected } = useAccount()
@@ -46,7 +55,37 @@ export default function SomniaJumpGame() {
     useEffect(() => {
         const saved = localStorage.getItem('somniaJumpHighScore')
         if (saved) setHighScore(parseInt(saved))
+
+        // Load leaderboard
+        fetchLeaderboard()
     }, [])
+
+    const fetchLeaderboard = async () => {
+        try {
+            const res = await fetch('/api/leaderboard')
+            const data = await res.json()
+            setLeaderboard(data.leaderboard || [])
+        } catch (error) {
+            console.error('Failed to fetch leaderboard:', error)
+        }
+    }
+
+    const saveToLeaderboard = async (playerScore: number) => {
+        if (!address || savingToLeaderboard) return
+
+        setSavingToLeaderboard(true)
+        try {
+            await fetch('/api/leaderboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address, score: playerScore })
+            })
+            await fetchLeaderboard()
+        } catch (error) {
+            console.error('Failed to save to leaderboard:', error)
+        }
+        setSavingToLeaderboard(false)
+    }
 
     const generatePlatforms = useCallback((startY: number, count: number): Platform[] => {
         const platforms: Platform[] = []
@@ -202,6 +241,10 @@ export default function SomniaJumpGame() {
                     localStorage.setItem('somniaJumpHighScore', finalScore.toString())
                 }
                 setGameState('gameover')
+                // Auto-save to leaderboard if connected
+                if (address && finalScore > 0) {
+                    saveToLeaderboard(finalScore)
+                }
                 return
             }
 
@@ -442,7 +485,35 @@ export default function SomniaJumpGame() {
                                 <p>📱 Touch left/right on mobile</p>
                                 <p>⏸ ESC to pause</p>
                             </div>
-                            <button className="game-button" onClick={startGame}>🚀 Start Game</button>
+                            <div className="menu-buttons">
+                                <button className="game-button" onClick={startGame}>🚀 Start Game</button>
+                                <button className="game-button secondary" onClick={() => setShowLeaderboard(!showLeaderboard)}>
+                                    🏆 Leaderboard
+                                </button>
+                            </div>
+
+                            {showLeaderboard && (
+                                <div className="leaderboard">
+                                    <h3 className="leaderboard-title">🏆 Top Players</h3>
+                                    {leaderboard.length === 0 ? (
+                                        <p className="leaderboard-empty">No scores yet. Be the first!</p>
+                                    ) : (
+                                        <div className="leaderboard-list">
+                                            {leaderboard.map((entry, index) => (
+                                                <div key={index} className={`leaderboard-entry ${address?.toLowerCase() === entry.address.toLowerCase() ? 'is-you' : ''}`}>
+                                                    <span className="leaderboard-rank">
+                                                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                                                    </span>
+                                                    <span className="leaderboard-address">
+                                                        {entry.address.slice(0, 6)}...{entry.address.slice(-4)}
+                                                    </span>
+                                                    <span className="leaderboard-score">{entry.score}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
