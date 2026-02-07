@@ -259,7 +259,11 @@ export async function POST(request: NextRequest) {
 
                 console.log('[Leaderboard POST] Existing score:', existingScore, 'New score:', score)
 
-                if (score > existingScore) {
+                // Fix NaN comparison - if existingScore is NaN, treat as 0
+                const safeExistingScore = isNaN(existingScore) ? 0 : existingScore
+                console.log('[Leaderboard POST] Safe existing score:', safeExistingScore)
+
+                if (score > safeExistingScore) {
                     // Update score
                     if (existingMember) {
                         console.log('[Leaderboard POST] Removing old entry:', existingMember)
