@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leaderboard API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0a0a1a;
+            color: white;
+        }
+        button {
+            background: #7b3ff2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #9b5ff2;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a2a;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        input {
+            padding: 8px;
+            margin: 5px;
+            background: #1a1a2a;
+            color: white;
+            border: 1px solid #7b3ff2;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Leaderboard API Test</h1>
+    
+    <h2>Test POST (Save Score)</h2>
+    <div>
+        <input type="text" id="address" placeholder="Wallet Address" value="0x1234567890abcdef">
+        <input type="number" id="score" placeholder="Score" value="100">
+        <button onclick="testPost()">💾 Save Score</button>
+    </div>
+    
+    <h2>Test GET (Get Leaderboard)</h2>
+    <button onclick="testGet()">📊 Get Leaderboard</button>
+    
+    <h2>Result:</h2>
+    <div id="result">Click a button to test...</div>
+
+    <script>
+        async function testPost() {
+            const address = document.getElementById('address').value;
+            const score = parseInt(document.getElementById('score').value);
+            
+            const result = document.getElementById('result');
+            result.textContent = 'Sending POST request...';
+            
+            try {
+                const response = await fetch('/api/leaderboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, score })
+                });
+                
+                const data = await response.json();
+                result.textContent = '✅ POST Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = '❌ Error:\n' + error.message;
+            }
+        }
+        
+        async function testGet() {
+            const result = document.getElementById('result');
+            result.textContent = 'Sending GET request...';
+            
+            try {
+                const response = await fetch('/api/leaderboard');
+                const data = await response.json();
+                result.textContent = '✅ GET Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = '❌ Error:\n' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

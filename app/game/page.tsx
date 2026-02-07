@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 import './game.css'
 
 interface Platform {
@@ -12,12 +13,15 @@ interface Platform {
 }
 
 export default function SomniaJumpGame() {
-    const { address } = useAccount()
+    const { address, isConnected } = useAccount()
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start')
     const [score, setScore] = useState(0)
     const [highScore, setHighScore] = useState(0)
     const [savingToLeaderboard, setSavingToLeaderboard] = useState(false)
+    const [leaderboard, setLeaderboard] = useState<{ address: string; score: number }[]>([])
+    const [showLeaderboard, setShowLeaderboard] = useState(false)
+    const [saveSuccess, setSaveSuccess] = useState(false)
 
     // Game refs
     const gameRef = useRef({
@@ -41,12 +45,24 @@ export default function SomniaJumpGame() {
     useEffect(() => {
         const saved = localStorage.getItem('somniaJumpHighScore')
         if (saved) setHighScore(parseInt(saved))
+        fetchLeaderboard()
     }, [])
+
+    const fetchLeaderboard = async () => {
+        try {
+            const res = await fetch('/api/leaderboard')
+            const data = await res.json()
+            setLeaderboard(data.leaderboard || [])
+        } catch (error) {
+            console.error('Failed to fetch leaderboard:', error)
+        }
+    }
 
     const saveToLeaderboard = useCallback(async (finalScore: number) => {
         if (!address || finalScore === 0) return
 
         setSavingToLeaderboard(true)
+        setSaveSuccess(false)
         try {
             const response = await fetch('/api/leaderboard', {
                 method: 'POST',
@@ -55,8 +71,10 @@ export default function SomniaJumpGame() {
             })
 
             const data = await response.json()
-            if (data.newHighScore) {
+            if (data.success) {
                 console.log('New high score saved to leaderboard!')
+                setSaveSuccess(true)
+                fetchLeaderboard()
             }
         } catch (error) {
             console.error('Failed to save to leaderboard:', error)
@@ -105,6 +123,8 @@ export default function SomniaJumpGame() {
 
         setScore(0)
         setGameState('playing')
+        setShowLeaderboard(false)
+        setSaveSuccess(false)
     }, [generatePlatforms])
 
     useEffect(() => {
@@ -339,7 +359,43 @@ export default function SomniaJumpGame() {
                                 <p>🎮 ← → or A/D to move</p>
                                 <p>📱 Touch left/right on mobile</p>
                             </div>
-                            <button className="game-button" onClick={startGame}>Start Game</button>
+
+                            <div className="menu-buttons">
+                                <button className="game-button" onClick={startGame}>Start Game</button>
+                                <button className="game-button secondary" onClick={() => setShowLeaderboard(!showLeaderboard)}>
+                                    🏆 Leaderboard
+                                </button>
+                            </div>
+
+                            {!isConnected && (
+                                <div className="wallet-prompt" style={{ marginTop: '1rem' }}>
+                                    <p className="wallet-hint">Connect wallet to save scores</p>
+                                    <ConnectButton />
+                                </div>
+                            )}
+
+                            {showLeaderboard && (
+                                <div className="leaderboard">
+                                    <h3 className="leaderboard-title">🏆 Top Players</h3>
+                                    {leaderboard.length === 0 ? (
+                                        <p className="leaderboard-empty">No scores yet. Be the first!</p>
+                                    ) : (
+                                        <div className="leaderboard-list">
+                                            {leaderboard.map((entry, index) => (
+                                                <div key={index} className={`leaderboard-entry ${address?.toLowerCase() === entry.address.toLowerCase() ? 'is-you' : ''}`}>
+                                                    <span className="leaderboard-rank">
+                                                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                                                    </span>
+                                                    <span className="leaderboard-address">
+                                                        {entry.address.slice(0, 6)}...{entry.address.slice(-4)}
+                                                    </span>
+                                                    <span className="leaderboard-score">{entry.score}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -353,9 +409,21 @@ export default function SomniaJumpGame() {
                                 <p className="score-value-large">{score}</p>
                             </div>
                             {score >= highScore && score > 0 && <p className="new-record">🎉 New Record!</p>}
+
                             {savingToLeaderboard && <p className="hint">💾 Saving to leaderboard...</p>}
-                            {!address && score > 0 && <p className="hint">🔗 Connect wallet to save to leaderboard</p>}
-                            <button className="game-button" onClick={startGame}>Play Again</button>
+                            {saveSuccess && <p className="hint" style={{ color: '#22c55e' }}>✅ Saved to leaderboard!</p>}
+
+                            {!isConnected && score > 0 && (
+                                <div className="wallet-prompt" style={{ margin: '1rem 0' }}>
+                                    <p className="hint">🔗 Connect wallet to save to leaderboard</p>
+                                    <ConnectButton />
+                                </div>
+                            )}
+
+                            <div className="gameover-buttons">
+                                <button className="game-button" onClick={startGame}>Play Again</button>
+                                <button className="game-button secondary" onClick={() => setGameState('start')}>Main Menu</button>
+                            </div>
                             <p className="hint">Press SPACE to restart</p>
                         </div>
                     </div>
