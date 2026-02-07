@@ -92,8 +92,10 @@ export async function GET() {
         if (db) {
             try {
                 const { type, client } = db
-                let entries = []
+                let entries: any[] = []
                 const leaderboard: LeaderboardEntry[] = []
+
+                console.log('[Leaderboard GET] Using storage type:', type)
 
                 if (type === 'kv') {
                     entries = await client.zrange(LEADERBOARD_KEY, 0, 9, { rev: true, withScores: true })
@@ -105,46 +107,63 @@ export async function GET() {
                     })
                 }
 
+                console.log('[Leaderboard GET] Raw entries:', JSON.stringify(entries, null, 2))
+                console.log('[Leaderboard GET] Entries length:', entries?.length)
+
                 // Universal parsing logic
                 if (Array.isArray(entries) && entries.length > 0) {
-                    const firstItem = entries[0] as any
+                    const firstItem = entries[0]
+                    console.log('[Leaderboard GET] First item type:', typeof firstItem)
+                    console.log('[Leaderboard GET] First item:', JSON.stringify(firstItem))
+
                     // Check if it's an object format (Redis v4 often returns {value, score}, Vercel KV might too)
-                    // We check for 'score' property existence
                     const isObjectFormat = typeof firstItem === 'object' && firstItem !== null && ('score' in firstItem)
+                    console.log('[Leaderboard GET] Is object format:', isObjectFormat)
 
                     if (isObjectFormat) {
                         for (const item of entries) {
                             try {
                                 // Handle both 'member' (Vercel) and 'value' (Redis) keys
-                                const dataStr = (item as any).member || (item as any).value || item
+                                const dataStr = (item as any).member || (item as any).value || JSON.stringify(item)
                                 const scoreVal = (item as any).score
 
-                                const parsed = JSON.parse(dataStr)
+                                console.log('[Leaderboard GET] Parsing object item:', { dataStr, scoreVal })
+
+                                // dataStr might already be an object in some cases
+                                const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
                                 leaderboard.push({
                                     address: parsed.address,
                                     score: Number(scoreVal),
-                                    timestamp: parsed.timestamp
+                                    timestamp: parsed.timestamp || Date.now()
                                 })
-                            } catch (e) { /* Skip invalid */ }
+                            } catch (e) {
+                                console.error('[Leaderboard GET] Parse error (object):', e, item)
+                            }
                         }
                     } else {
                         // Flat array format: [member, score, member, score...]
                         for (let i = 0; i < entries.length; i += 2) {
                             try {
-                                const dataStr = entries[i] as string
+                                const dataStr = entries[i]
                                 const scoreVal = entries[i + 1]
 
-                                const parsed = JSON.parse(dataStr)
+                                console.log('[Leaderboard GET] Parsing flat item:', { dataStr, scoreVal, index: i })
+
+                                // dataStr might be string or object
+                                const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
                                 leaderboard.push({
                                     address: parsed.address,
                                     score: Number(scoreVal),
-                                    timestamp: parsed.timestamp
+                                    timestamp: parsed.timestamp || Date.now()
                                 })
-                            } catch (e) { /* Skip invalid */ }
+                            } catch (e) {
+                                console.error('[Leaderboard GET] Parse error (flat):', e, entries[i])
+                            }
                         }
                     }
                 }
 
+                console.log('[Leaderboard GET] Final leaderboard:', leaderboard)
                 return NextResponse.json({ leaderboard, storage: type })
             } catch (dbError) {
                 console.error('DB Read Failed (falling back to memory):', dbError)
@@ -171,11 +190,15 @@ export async function POST(request: NextRequest) {
         const body = await request.json()
         const { address, score } = body
 
+        console.log('[Leaderboard POST] Received:', { address, score })
+
         if (!address || typeof score !== 'number') {
+            console.log('[Leaderboard POST] Invalid data:', { address, score })
             return NextResponse.json({ error: 'Invalid data' }, { status: 400 })
         }
 
         const db = await getDb()
+        console.log('[Leaderboard POST] DB connection:', db ? db.type : 'null (memory fallback)')
 
         // Try DB first
         if (db) {
@@ -185,47 +208,62 @@ export async function POST(request: NextRequest) {
                 let existingMember = ''
 
                 // 1. Get existing score
-                let allEntries = []
+                let allEntries: any[] = []
                 if (type === 'kv') {
                     allEntries = await client.zrange(LEADERBOARD_KEY, 0, -1, { withScores: true })
                 } else {
                     allEntries = await client.zRange(LEADERBOARD_KEY, 0, -1, { WITHSCORES: true })
                 }
 
-                if (type === 'kv') {
-                    for (let i = 0; i < allEntries.length; i += 2) {
-                        try {
-                            const data = allEntries[i] as string
-                            const parsed = JSON.parse(data)
-                            if (parsed.address.toLowerCase() === address.toLowerCase()) {
-                                existingScore = Number(allEntries[i + 1])
-                                existingMember = data
-                                break
-                            }
-                        } catch { }
-                    }
-                } else {
-                    for (const item of allEntries) {
-                        try {
-                            const dataStr = (item as any).value || item
-                            const scoreVal = (item as any).score
-                            if (JSON.parse(dataStr).address.toLowerCase() === address.toLowerCase()) {
-                                existingScore = scoreVal
-                                existingMember = dataStr
-                                break
-                            }
-                        } catch { }
+                console.log('[Leaderboard POST] All entries count:', allEntries?.length)
+
+                // Universal parsing to find existing entry
+                if (Array.isArray(allEntries) && allEntries.length > 0) {
+                    const firstItem = allEntries[0]
+                    const isObjectFormat = typeof firstItem === 'object' && firstItem !== null && ('score' in firstItem)
+
+                    if (isObjectFormat) {
+                        for (const item of allEntries) {
+                            try {
+                                const dataStr = (item as any).member || (item as any).value || JSON.stringify(item)
+                                const scoreVal = (item as any).score
+                                const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
+                                if (parsed.address?.toLowerCase() === address.toLowerCase()) {
+                                    existingScore = Number(scoreVal)
+                                    existingMember = typeof dataStr === 'string' ? dataStr : JSON.stringify({ address: parsed.address, timestamp: parsed.timestamp })
+                                    break
+                                }
+                            } catch { }
+                        }
+                    } else {
+                        // Flat array
+                        for (let i = 0; i < allEntries.length; i += 2) {
+                            try {
+                                const dataStr = allEntries[i]
+                                const scoreVal = allEntries[i + 1]
+                                const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
+                                if (parsed.address?.toLowerCase() === address.toLowerCase()) {
+                                    existingScore = Number(scoreVal)
+                                    existingMember = typeof dataStr === 'string' ? dataStr : JSON.stringify({ address: parsed.address, timestamp: parsed.timestamp })
+                                    break
+                                }
+                            } catch { }
+                        }
                     }
                 }
+
+                console.log('[Leaderboard POST] Existing score:', existingScore, 'New score:', score)
 
                 if (score > existingScore) {
                     // Update score
                     if (existingMember) {
+                        console.log('[Leaderboard POST] Removing old entry:', existingMember)
                         if (type === 'kv') await client.zrem(LEADERBOARD_KEY, existingMember)
                         else await client.zRem(LEADERBOARD_KEY, existingMember)
                     }
 
                     const newMember = JSON.stringify({ address, timestamp: Date.now() })
+                    console.log('[Leaderboard POST] Adding new entry:', newMember, 'with score:', score)
 
                     if (type === 'kv') await client.zadd(LEADERBOARD_KEY, { score, member: newMember })
                     else await client.zAdd(LEADERBOARD_KEY, { score, value: newMember })
@@ -237,12 +275,14 @@ export async function POST(request: NextRequest) {
                         else await client.zRemRangeByRank(LEADERBOARD_KEY, 0, count - MAX_ENTRIES - 1)
                     }
 
+                    console.log('[Leaderboard POST] Success! New high score saved.')
                     return NextResponse.json({ success: true, newHighScore: true, storage: type })
                 }
 
+                console.log('[Leaderboard POST] Score not higher than existing, not saving.')
                 return NextResponse.json({ success: true, newHighScore: false, storage: type })
             } catch (dbError) {
-                console.error("DB Write Failed (falling back to memory):", dbError)
+                console.error("[Leaderboard POST] DB Write Failed (falling back to memory):", dbError)
                 // Proceed to fallback
             }
         }
