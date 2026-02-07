@@ -115,6 +115,10 @@ export async function GET() {
                     const firstItem = entries[0]
                     console.log('[Leaderboard GET] First item type:', typeof firstItem)
                     console.log('[Leaderboard GET] First item:', JSON.stringify(firstItem))
+                    console.log('[Leaderboard GET] First item keys:', typeof firstItem === 'object' && firstItem !== null ? Object.keys(firstItem) : 'N/A')
+                    console.log('[Leaderboard GET] Has score prop:', typeof firstItem === 'object' && firstItem !== null && 'score' in firstItem)
+                    console.log('[Leaderboard GET] Has value prop:', typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem)
+                    console.log('[Leaderboard GET] Has member prop:', typeof firstItem === 'object' && firstItem !== null && 'member' in firstItem)
 
                     // Check if it's an object format (Redis v4 often returns {value, score}, Vercel KV might too)
                     const isObjectFormat = typeof firstItem === 'object' && firstItem !== null && ('score' in firstItem)
@@ -131,9 +135,10 @@ export async function GET() {
 
                                 // dataStr might already be an object in some cases
                                 const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
+                                const finalScore = (scoreVal !== undefined && scoreVal !== null) ? Number(scoreVal) : 0
                                 leaderboard.push({
                                     address: parsed.address,
-                                    score: Number(scoreVal),
+                                    score: isNaN(finalScore) ? 0 : finalScore,
                                     timestamp: parsed.timestamp || Date.now()
                                 })
                             } catch (e) {
@@ -149,11 +154,11 @@ export async function GET() {
 
                                 console.log('[Leaderboard GET] Parsing flat item:', { dataStr, scoreVal, index: i })
 
-                                // dataStr might be string or object
                                 const parsed = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr
+                                const finalScore = (scoreVal !== undefined && scoreVal !== null) ? Number(scoreVal) : 0
                                 leaderboard.push({
                                     address: parsed.address,
-                                    score: Number(scoreVal),
+                                    score: isNaN(finalScore) ? 0 : finalScore,
                                     timestamp: parsed.timestamp || Date.now()
                                 })
                             } catch (e) {
