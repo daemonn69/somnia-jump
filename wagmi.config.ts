@@ -3,7 +3,7 @@ import { somniaMainnet } from './lib/chains'
 
 export const config = getDefaultConfig({
     appName: 'Somnia DApp',
-    projectId: 'YOUR_WALLETCONNECT_PROJECT_ID', // Get from https://cloud.walletconnect.com
+    projectId: '8afef30bd8814e89439c4c03c1611295',
     chains: [somniaMainnet],
     ssr: true,
 })
