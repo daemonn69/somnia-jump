@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi'
-import { parseEther, toHex } from 'viem'
-import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
-import './game/game.css'
+import Link from 'next/link'
+import { useAccount } from 'wagmi'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import './game.css'
 
 interface Platform {
     x: number
@@ -12,31 +12,20 @@ interface Platform {
     width: number
 }
 
-interface LeaderboardEntry {
-    address: string
-    score: number
-    timestamp: number
-}
-
 export default function SomniaJumpGame() {
+    const { address, isConnected } = useAccount()
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [gameState, setGameState] = useState<'start' | 'playing' | 'paused' | 'gameover'>('start')
     const [score, setScore] = useState(0)
     const [highScore, setHighScore] = useState(0)
-    const [savedToChain, setSavedToChain] = useState(false)
-    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-    const [showLeaderboard, setShowLeaderboard] = useState(false)
     const [savingToLeaderboard, setSavingToLeaderboard] = useState(false)
-
-    // Blockchain hooks
-    const { address, isConnected } = useAccount()
-    const { data: txHash, sendTransaction, isPending: isSending, error: sendError } = useSendTransaction()
-    const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash })
-    const { openConnectModal } = useConnectModal()
+    const [leaderboard, setLeaderboard] = useState<{ address: string; score: number }[]>([])
+    const [showLeaderboard, setShowLeaderboard] = useState(false)
+    const [saveSuccess, setSaveSuccess] = useState(false)
 
     // Game refs
     const gameRef = useRef({
-        player: { x: 0, y: 0, vy: 0, width: 60, height: 60 },
+        player: { x: 0, y: 0, vy: 0, width: 80, height: 80 },
         platforms: [] as Platform[],
         keys: { left: false, right: false },
         maxY: 0,
@@ -56,23 +45,8 @@ export default function SomniaJumpGame() {
     useEffect(() => {
         const saved = localStorage.getItem('somniaJumpHighScore')
         if (saved) setHighScore(parseInt(saved))
-
-        // Load leaderboard
         fetchLeaderboard()
     }, [])
-
-    // Auto-open connect modal on first visit
-    useEffect(() => {
-        const hasVisited = localStorage.getItem('somniaJumpVisited')
-        if (!hasVisited && !isConnected && openConnectModal) {
-            // Small delay to ensure modal is ready
-            const timer = setTimeout(() => {
-                openConnectModal()
-            }, 500)
-            localStorage.setItem('somniaJumpVisited', 'true')
-            return () => clearTimeout(timer)
-        }
-    }, [isConnected, openConnectModal])
 
     const fetchLeaderboard = async () => {
         try {
@@ -84,22 +58,30 @@ export default function SomniaJumpGame() {
         }
     }
 
-    const saveToLeaderboard = async (playerScore: number) => {
-        if (!address || savingToLeaderboard) return
+    const saveToLeaderboard = useCallback(async (finalScore: number) => {
+        if (!address || finalScore === 0) return
 
         setSavingToLeaderboard(true)
+        setSaveSuccess(false)
         try {
-            await fetch('/api/leaderboard', {
+            const response = await fetch('/api/leaderboard', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address, score: playerScore })
+                body: JSON.stringify({ address, score: finalScore })
             })
-            await fetchLeaderboard()
+
+            const data = await response.json()
+            if (data.success) {
+                console.log('New high score saved to leaderboard!')
+                setSaveSuccess(true)
+                fetchLeaderboard()
+            }
         } catch (error) {
             console.error('Failed to save to leaderboard:', error)
+        } finally {
+            setSavingToLeaderboard(false)
         }
-        setSavingToLeaderboard(false)
-    }
+    }, [address])
 
     const generatePlatforms = useCallback((startY: number, count: number): Platform[] => {
         const platforms: Platform[] = []
@@ -118,11 +100,11 @@ export default function SomniaJumpGame() {
 
         // Reset player - start on first platform
         game.player = {
-            x: CANVAS_WIDTH / 2 - 30,
+            x: CANVAS_WIDTH / 2 - 40,
             y: CANVAS_HEIGHT - 100,
             vy: JUMP_VELOCITY,
-            width: 60,
-            height: 60
+            width: 80,
+            height: 80
         }
 
         // Generate initial platforms
@@ -141,7 +123,8 @@ export default function SomniaJumpGame() {
 
         setScore(0)
         setGameState('playing')
-        setSavedToChain(false)
+        setShowLeaderboard(false)
+        setSaveSuccess(false)
     }, [generatePlatforms])
 
     const togglePause = useCallback(() => {
@@ -153,29 +136,6 @@ export default function SomniaJumpGame() {
         setGameState('start')
         setScore(0)
     }, [])
-
-    // Save score to blockchain
-    const saveToBlockchain = useCallback(() => {
-        if (!isConnected || !address) return
-
-        // Create a message with the score data
-        const scoreData = JSON.stringify({
-            game: 'SomniaJump',
-            player: address,
-            score: score,
-            timestamp: Date.now()
-        })
-
-        // Send transaction with score in data field
-        sendTransaction({
-            to: address, // Send to self (or could be a contract address)
-            value: parseEther('0'), // No value, just data
-            data: toHex(scoreData),
-            gas: BigInt(50000) // Explicit gas limit for data transaction
-        })
-
-        setSavedToChain(true)
-    }, [isConnected, address, score, sendTransaction])
 
     useEffect(() => {
         if (gameState !== 'playing') return
@@ -254,11 +214,9 @@ export default function SomniaJumpGame() {
                     setHighScore(finalScore)
                     localStorage.setItem('somniaJumpHighScore', finalScore.toString())
                 }
+                // Сохраняем результат в лидерборд
+                saveToLeaderboard(finalScore)
                 setGameState('gameover')
-                // Auto-save to leaderboard if connected
-                if (address && finalScore > 0) {
-                    saveToLeaderboard(finalScore)
-                }
                 return
             }
 
@@ -289,72 +247,80 @@ export default function SomniaJumpGame() {
             // Player - Cypher Character
             const px = player.x + player.width / 2
             const py = player.y + player.height / 2
-            const scale = player.width / 40 // Scale based on player size
+            // Original SVG key points are based on 100x100 grid. Player is 40x40.
+            // Scale factor: 40 / 100 = 0.4
+            const s = player.width / 100
 
             ctx.save()
             ctx.translate(px, py)
-            ctx.scale(scale, scale)
+            ctx.scale(s, s)
+            // Center the local coordinate system (50,50 becomes 0,0)
+            ctx.translate(-50, -50)
 
             // Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.3)'
             ctx.beginPath()
-            ctx.ellipse(0, 18, 12, 2, 0, 0, Math.PI * 2)
+            ctx.ellipse(50, 90, 30, 5, 0, 0, Math.PI * 2)
             ctx.fill()
 
-            // Body gradient
-            const bodyGrad = ctx.createLinearGradient(-15, -20, 15, 20)
+            // Body Gradient
+            const bodyGrad = ctx.createLinearGradient(0, 0, 100, 100)
             bodyGrad.addColorStop(0, '#8b5cf6')
             bodyGrad.addColorStop(1, '#3b82f6')
 
-            // Body shape (translated from SVG path)
+            // Body Shape (Matches SVG path: M30 30 Q30 15 50 15 Q70 15 70 30 L75 70 Q75 85 50 85 Q25 85 25 70 Z)
             ctx.fillStyle = bodyGrad
             ctx.beginPath()
-            ctx.moveTo(-8, -6) // Start point (scaled from 30,30 -> center)
-            ctx.quadraticCurveTo(-8, -14, 0, -14) // Top left curve
-            ctx.quadraticCurveTo(8, -14, 8, -6) // Top right curve
-            ctx.lineTo(10, 14) // Right side
-            ctx.quadraticCurveTo(10, 20, 0, 20) // Bottom right curve
-            ctx.quadraticCurveTo(-10, 20, -10, 14) // Bottom left curve
+            ctx.moveTo(30, 30)
+            ctx.quadraticCurveTo(30, 15, 50, 15)
+            ctx.quadraticCurveTo(70, 15, 70, 30)
+            ctx.lineTo(75, 70)
+            ctx.quadraticCurveTo(75, 85, 50, 85)
+            ctx.quadraticCurveTo(25, 85, 25, 70)
             ctx.closePath()
             ctx.fill()
 
-            // Eye visor
+            // Eye Visor (rect x="35" y="35" width="30" height="12" rx="6")
             ctx.fillStyle = '#1e1b4b'
             ctx.beginPath()
-            ctx.roundRect(-6, -4, 12, 5, 2.5)
+            ctx.roundRect(35, 35, 30, 12, 6)
             ctx.fill()
 
-            // Glowing eyes with animation
-            const eyeGlow = 0.5 + 0.5 * Math.sin(Date.now() / 500)
+            // Textures/Glow for eyes
+            const time = Date.now()
+            const eyeOpacity = 0.5 + 0.5 * Math.sin(time / 200) // Blinking effect
+
+            // Glowing Eyes (cx="42" cy="41", cx="58" cy="41")
+            ctx.fillStyle = `rgba(96, 165, 250, ${0.4 + 0.6 * eyeOpacity})` // #60a5fa
             ctx.shadowColor = '#60a5fa'
-            ctx.shadowBlur = 8 * eyeGlow
+            ctx.shadowBlur = 10
 
-            ctx.fillStyle = '#60a5fa'
             ctx.beginPath()
-            ctx.arc(-3, -1.5, 1.5, 0, Math.PI * 2)
-            ctx.fill()
-            ctx.beginPath()
-            ctx.arc(3, -1.5, 1.5, 0, Math.PI * 2)
+            ctx.arc(42, 41, 3, 0, Math.PI * 2)
             ctx.fill()
 
-            ctx.shadowBlur = 0
+            ctx.beginPath()
+            ctx.arc(58, 41, 3, 0, Math.PI * 2)
+            ctx.fill()
 
-            // Core ring
+            ctx.shadowBlur = 0 // Reset shadow
+
+            // Core Detail
+            // Ring
             ctx.strokeStyle = 'rgba(255,255,255,0.2)'
-            ctx.lineWidth = 0.8
+            ctx.lineWidth = 2
             ctx.beginPath()
-            ctx.arc(0, 10, 4, 0, Math.PI * 2)
+            ctx.arc(50, 65, 8, 0, Math.PI * 2)
             ctx.stroke()
 
-            // Core center with glow
-            ctx.shadowColor = '#a78bfa'
-            ctx.shadowBlur = 6
+            // Inner Core
             ctx.fillStyle = '#a78bfa'
+            ctx.shadowColor = '#a78bfa'
+            ctx.shadowBlur = 5
             ctx.beginPath()
-            ctx.arc(0, 10, 2, 0, Math.PI * 2)
+            ctx.arc(50, 65, 4, 0, Math.PI * 2)
             ctx.fill()
 
-            ctx.shadowBlur = 0
             ctx.restore()
 
             game.animationId = requestAnimationFrame(gameLoop)
@@ -363,7 +329,7 @@ export default function SomniaJumpGame() {
         game.animationId = requestAnimationFrame(gameLoop)
 
         return () => cancelAnimationFrame(game.animationId)
-    }, [gameState, highScore])
+    }, [gameState, highScore, saveToLeaderboard])
 
     // Keyboard controls
     useEffect(() => {
@@ -371,7 +337,10 @@ export default function SomniaJumpGame() {
             if (e.key === 'ArrowLeft' || e.key === 'a') gameRef.current.keys.left = true
             if (e.key === 'ArrowRight' || e.key === 'd') gameRef.current.keys.right = true
             if (e.key === ' ' && gameState === 'gameover') startGame()
-            if (e.key === 'Escape' && (gameState === 'playing' || gameState === 'paused')) togglePause()
+            if (e.key === 'Escape') {
+                if (gameState === 'playing' || gameState === 'paused') togglePause()
+                if (gameState === 'start' && showLeaderboard) setShowLeaderboard(false)
+            }
         }
         const onKeyUp = (e: KeyboardEvent) => {
             if (e.key === 'ArrowLeft' || e.key === 'a') gameRef.current.keys.left = false
@@ -418,19 +387,23 @@ export default function SomniaJumpGame() {
         <div className="game-container">
             <div className="game-header">
                 <h1 className="game-title">Somnia <span className="gradient-text">Jump</span></h1>
+
                 {gameState === 'playing' && (
                     <button className="pause-button" onClick={togglePause} title="Pause (Esc)">⏸</button>
                 )}
-                <div className="score-display">
-                    <div className="score-item">
-                        <span className="score-label">Score</span>
-                        <span className="score-value">{score}</span>
+
+                {gameState !== 'start' && (
+                    <div className="score-display">
+                        <div className="score-item">
+                            <span className="score-label">Score</span>
+                            <span className="score-value">{score}</span>
+                        </div>
+                        <div className="score-item">
+                            <span className="score-label">Best</span>
+                            <span className="score-value">{highScore}</span>
+                        </div>
                     </div>
-                    <div className="score-item">
-                        <span className="score-label">Best</span>
-                        <span className="score-value">{highScore}</span>
-                    </div>
-                </div>
+                )}
             </div>
 
             <div className="canvas-wrapper">
@@ -444,82 +417,66 @@ export default function SomniaJumpGame() {
                 {gameState === 'start' && (
                     <div className="game-overlay">
                         <div className="overlay-content">
-                            <div className="character-preview">
-                                <svg viewBox="0 0 100 100" className="cypher-float">
-                                    {/* Shadow */}
-                                    <ellipse cx="50" cy="90" rx="20" ry="4" fill="rgba(0,0,0,0.3)" />
+                            {!showLeaderboard && (
+                                <>
+                                    <div className="character-preview">
+                                        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" className="cypher-float">
+                                            {/* Shadow */}
+                                            <ellipse cx="50" cy="90" rx="30" ry="5" fill="rgba(0,0,0,0.3)"></ellipse>
 
-                                    {/* Gradient definitions */}
-                                    <defs>
-                                        <linearGradient id="bodyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#8b5cf6" />
-                                            <stop offset="100%" stopColor="#3b82f6" />
-                                        </linearGradient>
-                                        <filter id="glow">
-                                            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-                                            <feMerge>
-                                                <feMergeNode in="coloredBlur" />
-                                                <feMergeNode in="SourceGraphic" />
-                                            </feMerge>
-                                        </filter>
-                                    </defs>
+                                            {/* Main Body */}
+                                            <defs>
+                                                <linearGradient id="bodyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                    <stop offset="0%" stopColor="#8b5cf6"></stop>
+                                                    <stop offset="100%" stopColor="#3b82f6"></stop>
+                                                </linearGradient>
+                                                <filter id="glow">
+                                                    <feGaussianBlur stdDeviation="1.5" result="coloredBlur"></feGaussianBlur>
+                                                    <feMerge>
+                                                        <feMergeNode in="coloredBlur"></feMergeNode>
+                                                        <feMergeNode in="SourceGraphic"></feMergeNode>
+                                                    </feMerge>
+                                                </filter>
+                                            </defs>
 
-                                    {/* Body Shape */}
-                                    <path d="M35 35 Q35 20 50 20 Q65 20 65 35 L70 70 Q70 82 50 82 Q30 82 30 70 Z" fill="url(#bodyGradient)" />
+                                            {/* Body Shape */}
+                                            <path d="M30 30 Q30 15 50 15 Q70 15 70 30 L75 70 Q75 85 50 85 Q25 85 25 70 Z" fill="url(#bodyGradient)"></path>
 
-                                    {/* Eye Visor */}
-                                    <rect x="38" y="38" width="24" height="10" rx="5" fill="#1e1b4b" />
+                                            {/* Eye Visor */}
+                                            <rect x="35" y="35" width="30" height="12" rx="6" fill="#1e1b4b"></rect>
 
-                                    {/* Glowing Eyes */}
-                                    <circle cx="44" cy="43" r="3" fill="#60a5fa" filter="url(#glow)">
-                                        <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
-                                    </circle>
-                                    <circle cx="56" cy="43" r="3" fill="#60a5fa" filter="url(#glow)">
-                                        <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
-                                    </circle>
+                                            {/* Glowing Eyes */}
+                                            <circle cx="42" cy="41" r="3" fill="#60a5fa" filter="url(#glow)">
+                                                <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"></animate>
+                                            </circle>
+                                            <circle cx="58" cy="41" r="3" fill="#60a5fa" filter="url(#glow)">
+                                                <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"></animate>
+                                            </circle>
 
-                                    {/* Core Ring */}
-                                    <circle cx="50" cy="65" r="8" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" />
-
-                                    {/* Core Center */}
-                                    <circle cx="50" cy="65" r="4" fill="#a78bfa" filter="url(#glow)">
-                                        <animate attributeName="r" values="4;5;4" dur="1.5s" repeatCount="indefinite" />
-                                    </circle>
-                                </svg>
-                            </div>
-                            <h2 className="overlay-title">Somnia Jump</h2>
-                            <p className="overlay-description">Help Cypher reach the stars!</p>
-                            {highScore > 0 && (
-                                <div className="best-score-badge">
-                                    🏆 Best: {highScore}
-                                </div>
+                                            {/* Detail / Core */}
+                                            <circle cx="50" cy="65" r="8" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"></circle>
+                                            <circle cx="50" cy="65" r="4" fill="#a78bfa" filter="url(#glow)"></circle>
+                                        </svg>
+                                    </div>
+                                    <h2 className="overlay-title">Somnia Jump</h2>
+                                    <p className="overlay-description">Jump to the top!</p>
+                                    <div className="controls-info">
+                                        <p>🎮 ← → or A/D to move</p>
+                                        <p>📱 Touch left/right on mobile</p>
+                                    </div>
+                                </>
                             )}
-                            <div className="controls-info">
-                                <p>🎮 ← → or A/D to move</p>
-                                <p>📱 Touch left/right on mobile</p>
-                                <p>⏸ ESC to pause</p>
-                            </div>
-
-                            {/* Wallet connection section */}
-                            <div className="wallet-section">
-                                {isConnected ? (
-                                    <div className="wallet-connected">
-                                        <span className="wallet-status">✅ Wallet connected</span>
-                                        <span className="wallet-address">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-                                    </div>
-                                ) : (
-                                    <div className="wallet-prompt">
-                                        <p className="wallet-hint">Connect wallet to save your score!</p>
-                                        <ConnectButton />
-                                    </div>
-                                )}
-                            </div>
 
                             <div className="menu-buttons">
-                                <button className="game-button" onClick={startGame}>🚀 Start Game</button>
+                                <button className="game-button" onClick={startGame}>Start Game</button>
                                 <button className="game-button secondary" onClick={() => setShowLeaderboard(!showLeaderboard)}>
-                                    🏆 Leaderboard
+                                    {showLeaderboard ? '🏠 Back to Menu' : '🏆 Leaderboard'}
                                 </button>
+                            </div>
+
+                            <div className="wallet-section" style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', zIndex: 50 }}>
+                                {!isConnected && <p className="wallet-hint">Connect wallet to save scores</p>}
+                                <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
                             </div>
 
                             {showLeaderboard && (
@@ -572,31 +529,12 @@ export default function SomniaJumpGame() {
                             </div>
                             {score >= highScore && score > 0 && <p className="new-record">🎉 New Record!</p>}
 
-                            {/* Blockchain save section */}
-                            {isConnected ? (
-                                <div className="blockchain-section">
-                                    {!savedToChain && !txHash && (
-                                        <button
-                                            className="game-button blockchain-button"
-                                            onClick={saveToBlockchain}
-                                            disabled={isSending}
-                                        >
-                                            {isSending ? '⏳ Sending...' : '⛓️ Save to Blockchain'}
-                                        </button>
-                                    )}
-                                    {txHash && isConfirming && (
-                                        <p className="tx-status confirming">⏳ Confirming transaction...</p>
-                                    )}
-                                    {txHash && isConfirmed && (
-                                        <p className="tx-status confirmed">✅ Score saved on-chain!</p>
-                                    )}
-                                    {sendError && (
-                                        <p className="tx-status error">❌ Transaction failed</p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="connect-prompt">
-                                    <p className="hint">Connect wallet to save on-chain</p>
+                            {savingToLeaderboard && <p className="hint">💾 Saving to leaderboard...</p>}
+                            {saveSuccess && <p className="hint" style={{ color: '#22c55e' }}>✅ Saved to leaderboard!</p>}
+
+                            {!isConnected && score > 0 && (
+                                <div className="wallet-prompt" style={{ margin: '1rem 0' }}>
+                                    <p className="hint">🔗 Connect wallet to save to leaderboard</p>
                                     <ConnectButton />
                                 </div>
                             )}
